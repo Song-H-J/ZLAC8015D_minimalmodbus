@@ -1,6 +1,7 @@
 import minimalmodbus as minimodbus
 import serial
 import numpy as np
+import time
 
 class MotorController:
 
@@ -11,6 +12,7 @@ class MotorController:
 
 		# ZLAC8015D support RS485 with Modbus RTU protocol
 		self.client = minimodbus.Instrument(port, self.ID, 'rtu')
+		self.client2 = minimodbus.Instrument(port, 2, 'rtu')
 		self.client.serial.baudrate = 115200 # default Baudrate
 		self.client.serial.parity = serial.PARITY_NONE
 		self.client.serial.stopbits = 1
@@ -22,12 +24,17 @@ class MotorController:
 		####################
 
 		## Common
+		self.MAX_MOTOR_RPM = 0x2008
 		self.CONTROL_REG = 0x200E # refer to Control CMDs
 		self.OPR_MODE = 0x200D # refer to Operation Mode
 		self.L_ACL_TIME = 0x2080 # Accel/Decel time (ms)
 		self.R_ACL_TIME = 0x2081
 		self.L_DCL_TIME = 0x2082
 		self.R_DCL_TIME = 0x2083
+		self.L_RATED_CUR = 0x2033
+		self.L_MAX_CUR = 0x2034
+		self.R_RATED_CUR = 0x2063
+		self.R_MAX_CUR = 0x2064
 
 		## Velocity Control Parameters
 		self.L_CMD_RPM = 0x2088 # Target RPM (RPM)
@@ -90,8 +97,15 @@ class MotorController:
 		########################
 		# Modbus function code #
 		########################
-		self.READ_HOLDING_REG = '0x03'
-		self.WRITE_MULTIPLE_REG = '0x16'
+		self.READ_HOLDING_REG = 0x03
+
+		###############################
+		# ZLLG80ASM250-L v3 parameter #
+		###############################
+		self.MAX_TORQUE = 11000 # mA
+		self.RATED_TORQUE = 6000 # mA
+
+		self.CMD_RPM = 0 # RPM
 
 	def modbus_fail_read_handler(self, ADDR, WORD):
 
@@ -99,7 +113,7 @@ class MotorController:
 		
 		while not read_success:
 			try:
-				result = self.client.read_registers(ADDR, WORD, functioncode=int(self.READ_HOLDING_REG, 16))
+				result = self.client.read_registers(ADDR, WORD, functioncode=self.READ_HOLDING_REG)
 				read_success = True
 			except AttributeError as e:
 				print(e)
@@ -126,7 +140,7 @@ class MotorController:
 			print("set_mode ERROR: set only 3 or 4")
 			return 0
 
-		result = self.client.write_registers(self.OPR_MODE, MODE)
+		result = self.client.write_register(self.OPR_MODE, MODE)
 		return result
 
 	def get_mode(self):
@@ -137,20 +151,20 @@ class MotorController:
 		return mode
 
 	def enable_motor(self):
-		result = self.client.write_registers(self.CONTROL_REG, [self.ENABLE])
+		result = self.client.write_register(self.CONTROL_REG, self.ENABLE)
 
 	def disable_motor(self):
-		result = self.client.write_registers(self.CONTROL_REG, [self.DOWN_TIME])
+		result = self.client.write_register(self.CONTROL_REG, self.DOWN_TIME)
 
 	def emergency_stop_motor(self):
-		result = self.client.write_registers(self.CONTROL_REG, self.EMER_STOP)
+		result = self.client.write_register(self.CONTROL_REG, self.EMER_STOP)
 
 	def get_fault_code(self):
 
-		fault_codes = self.client.read_registers(self.L_FAULT, 2, functioncode=int(self.READ_HOLDING_REG, 16))
+		fault_codes = self.modbus_fail_read_handler(self.L_FAULT, 2)
 
-		L_fault_code = fault_codes.registers[0]
-		R_fault_code = fault_codes.registers[1]
+		L_fault_code = fault_codes[0]
+		R_fault_code = fault_codes[1]
 
 		L_fault_flag = L_fault_code in self.FAULT_LIST
 		R_fault_flag = R_fault_code in self.FAULT_LIST
@@ -158,56 +172,23 @@ class MotorController:
 		return (L_fault_flag, L_fault_code), (R_fault_flag, R_fault_code)
 
 	def clear_alarm(self):
-		result = self.client.write_registers(self.CONTROL_REG, self.ALRM_CLR)
+		result = self.client.write_register(self.CONTROL_REG, self.ALRM_CLR)
 
 	def set_accel_time(self, L_ms, R_ms):
-
-		if L_ms > 32767:
-			L_ms = 32767
-		elif L_ms < 0:
-			L_ms = 0
-
-		if R_ms > 32767:
-			R_ms = 32767
-		elif R_ms < 0:
-			R_ms = 0
-
 		result = self.client.write_registers(self.L_ACL_TIME, [int(L_ms),int(R_ms)])
 
 	def set_decel_time(self, L_ms, R_ms):
-
-		if L_ms > 32767:
-			L_ms = 32767
-		elif L_ms < 0:
-			L_ms = 0
-
-		if R_ms > 32767:
-			R_ms = 32767
-		elif R_ms < 0:
-			R_ms = 0
-
 		result = self.client.write_registers(self.L_DCL_TIME, [int(L_ms), int(R_ms)])
 
 	def int16Dec_to_int16Hex(self,int16):
 
 		lo_byte = (int16 & 0x00FF)
 		hi_byte = (int16 & 0xFF00) >> 8
-
 		all_bytes = (hi_byte << 8) | lo_byte
 
 		return all_bytes
 
 	def set_rpm(self, L_rpm, R_rpm):
-
-		if L_rpm > 3000:
-			L_rpm = 3000
-		elif L_rpm < -3000:
-			L_rpm = -3000
-
-		if R_rpm > 3000:
-			R_rpm = 3000
-		elif R_rpm < -3000:
-			R_rpm = -3000
 
 		left_bytes = self.int16Dec_to_int16Hex(L_rpm)
 		right_bytes = self.int16Dec_to_int16Hex(R_rpm)
@@ -233,39 +214,134 @@ class MotorController:
 	def map(self, val, in_min, in_max, out_min, out_max):
 			return (val - in_min) * (out_max - out_min) / (in_max - in_min) + out_min
 
-	def deg_to_32bitArray(self, deg):
-
-		dec = int(self.map(deg, -1440, 1440, -65536, 65536))
-		HI_WORD = (dec & 0xFFFF0000) >> 16
-		LO_WORD = dec & 0x0000FFFF
-
-		return [HI_WORD, LO_WORD]
-
 	def set_torque(self, L_toq, R_toq):
-
-		if L_toq > 30000:
-			L_toq = 30000
-		elif L_toq < -30000:
-			L_toq = -30000
-
-		if R_toq > 30000:
-			R_toq = 30000
-		elif R_toq < -30000:
-			R_toq = -30000
 
 		left_bytes = self.int16Dec_to_int16Hex(L_toq)
 		right_bytes = self.int16Dec_to_int16Hex(R_toq)
 
 		result = self.client.write_registers(self.L_CMD_TOQ, [left_bytes, right_bytes])
 
-	#def get_voltage(self):
-
-	
 	def get_torque(self):
 		registers = self.modbus_fail_read_handler(self.L_FB_TOQ, 2)
-		fb_L_torque = np.int16(registers[0])/10.0000
-		fb_R_torque = np.int16(registers[1])/10.0000
+		fb_L_torque = np.int16(registers[0])/10.0
+		fb_R_torque = np.int16(registers[1])/10.0
 
 		return fb_L_torque, fb_R_torque
+
+
+
+	def set_max_rpm(self, MAX_RPM):
+		max_rpm = self.int16Dec_to_int16Hex(MAX_RPM)
+		result = self.client.write_register(self.MAX_MOTOR_RPM, max_rpm)
+		return result
 	
-	#def get_watt(self):
+	def set_sync_torque(self, Toq):
+		toq = self.int16Dec_to_int16Hex(Toq)
+		result = self.client.write_registers(self.L_CMD_TOQ, [toq,toq])
+	
+	def set_rpm_w_toq(self, cmd_rpm):
+		temp_cmd_rpm = cmd_rpm
+		if temp_cmd_rpm == self.CMD_RPM: return 0
+		
+		else:
+			self.CMD_RPM = cmd_rpm
+		# start = time.time()
+		toq = self.RATED_TORQUE
+		cur_L_rpm, cur_R_rpm = self.get_rpm()
+		
+		if cmd_rpm == 0:
+			cur_L_rpm, cur_R_rpm = self.get_rpm()
+			if cur_R_rpm > 0:
+				self.set_sync_torque(-self.RATED_TORQUE)
+				while cur_R_rpm > cmd_rpm:
+					cur_L_rpm, cur_R_rpm = self.get_rpm()
+					#print(f'Left RPM = {cur_L_rpm}, Right RPM = {cur_R_rpm}')
+				self.set_sync_torque(0)
+				# end = time.time()
+				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
+
+
+			elif cur_R_rpm < 0:
+				self.set_sync_torque(self.RATED_TORQUE)
+				while cur_R_rpm < cmd_rpm:
+					cur_L_rpm, cur_R_rpm = self.get_rpm()
+					#print(f'Left RPM = {cur_L_rpm}, Right RPM = {cur_R_rpm}')
+				self.set_sync_torque(0)
+				# end = time.time()
+				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
+
+			else:
+				self.set_sync_torque(0)
+				# end = time.time()
+				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
+
+
+		elif cmd_rpm * (cur_L_rpm + 0.01) > 0:
+			toq = self.RATED_TORQUE if cmd_rpm > 0 else -self.RATED_TORQUE
+			if abs(cmd_rpm) >= abs(cur_L_rpm):
+				self.set_max_rpm(abs(cmd_rpm))
+				self.set_sync_torque(toq)
+				######
+				# while True:
+				# 	L1,R1 = self.get_rpm()
+				# 	if abs(L1) >= abs(cmd_rpm):
+				# 		end = time.time()
+				# 		break
+				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
+				######
+			else:
+				self.set_max_rpm(abs(cmd_rpm))
+				self.set_sync_torque(-toq)
+				while abs(cur_R_rpm) >= (abs(cmd_rpm)+20): # 20 is margin RPM
+					cur_L_rpm, cur_R_rpm = self.get_rpm()
+					#print(f'Left RPM = {cur_L_rpm}, Right RPM = {cur_R_rpm}')
+				self.set_sync_torque(toq)
+				# end = time.time()
+				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
+
+
+		elif cmd_rpm * (cur_R_rpm + 0.01) < 0:
+			toq = self.RATED_TORQUE if cmd_rpm > 0 else -self.RATED_TORQUE
+			self.set_max_rpm(abs(cmd_rpm))
+			self.set_sync_torque(toq)
+			####
+			# while True:
+			# 	L2,R2 = self.get_rpm()
+			# 	#print(f'Left RPM = {L2}, Right RPM = {R2}')
+			# 	if cmd_rpm > 0:
+			# 		if L2 >=cmd_rpm:
+			# 			break
+			# 	elif cmd_rpm < 0:
+			# 		if L2 <=cmd_rpm:
+			# 			break
+			####
+			# end = time.time()
+			# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
+
+
+
+
+
+
+	def set_max_L_current(self, MAX_CUR):
+		max_cur = self.int16Dec_to_int16Hex(MAX_CUR*10)
+		result = self.client.write_register(self.L_MAX_CUR, max_cur)
+		return result
+	
+	def set_max_R_current(self, MAX_CUR):
+		max_cur = self.int16Dec_to_int16Hex(MAX_CUR*10)
+		result = self.client.write_register(self.R_MAX_CUR, max_cur)
+		return result
+	
+	def set_rated_L_current(self, rated_cur):
+		cur = self.int16Dec_to_int16Hex(rated_cur*10)
+		result = self.client.write_register(self.L_RATED_CUR, cur)
+
+	def set_rated_R_current(self, rated_cur):
+		cur = self.int16Dec_to_int16Hex(rated_cur*10)
+		result = self.client.write_register(self.R_RATED_CUR, cur)
+	
+	def get_voltage(self):
+		register = self.modbus_fail_read_handler(0x20A1, 1)
+		vol = np.float64(register[0]/100.0)
+		return vol
