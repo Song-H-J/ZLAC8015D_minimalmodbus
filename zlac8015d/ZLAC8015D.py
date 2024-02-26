@@ -8,7 +8,7 @@ class MotorController:
 	def __init__(self, port):
 
 		self._port = port
-		self.ID = 1 # default ID : 1
+		self.ID = 2 # default ID : 1
 
 		# ZLAC8015D support RS485 with Modbus RTU protocol
 		self.client = minimodbus.Instrument(port, self.ID, 'rtu')
@@ -35,6 +35,8 @@ class MotorController:
 		self.L_MAX_CUR = 0x2034
 		self.R_RATED_CUR = 0x2063
 		self.R_MAX_CUR = 0x2064
+		self.DRIVER_TEMP = 0x20B0
+		self.BUS_VOLTAGE = 0x20A1
 
 		## Velocity Control Parameters
 		self.L_CMD_RPM = 0x2088 # Target RPM (RPM)
@@ -241,12 +243,13 @@ class MotorController:
 	
 	def set_rpm_w_toq(self, cmd_rpm):
 		temp_cmd_rpm = cmd_rpm
+
 		if temp_cmd_rpm == self.CMD_RPM: return 0
-		
 		else:
 			self.CMD_RPM = cmd_rpm
-		# start = time.time()
+		
 		toq = self.RATED_TORQUE
+
 		cur_L_rpm, cur_R_rpm = self.get_rpm()
 		
 		if cmd_rpm == 0:
@@ -257,9 +260,6 @@ class MotorController:
 					cur_L_rpm, cur_R_rpm = self.get_rpm()
 					#print(f'Left RPM = {cur_L_rpm}, Right RPM = {cur_R_rpm}')
 				self.set_sync_torque(0)
-				# end = time.time()
-				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
-
 
 			elif cur_R_rpm < 0:
 				self.set_sync_torque(self.RATED_TORQUE)
@@ -267,13 +267,9 @@ class MotorController:
 					cur_L_rpm, cur_R_rpm = self.get_rpm()
 					#print(f'Left RPM = {cur_L_rpm}, Right RPM = {cur_R_rpm}')
 				self.set_sync_torque(0)
-				# end = time.time()
-				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
 
 			else:
 				self.set_sync_torque(0)
-				# end = time.time()
-				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
 
 
 		elif cmd_rpm * (cur_L_rpm + 0.01) > 0:
@@ -281,14 +277,6 @@ class MotorController:
 			if abs(cmd_rpm) >= abs(cur_L_rpm):
 				self.set_max_rpm(abs(cmd_rpm))
 				self.set_sync_torque(toq)
-				######
-				# while True:
-				# 	L1,R1 = self.get_rpm()
-				# 	if abs(L1) >= abs(cmd_rpm):
-				# 		end = time.time()
-				# 		break
-				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
-				######
 			else:
 				self.set_max_rpm(abs(cmd_rpm))
 				self.set_sync_torque(-toq)
@@ -296,32 +284,12 @@ class MotorController:
 					cur_L_rpm, cur_R_rpm = self.get_rpm()
 					#print(f'Left RPM = {cur_L_rpm}, Right RPM = {cur_R_rpm}')
 				self.set_sync_torque(toq)
-				# end = time.time()
-				# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
 
 
 		elif cmd_rpm * (cur_R_rpm + 0.01) < 0:
 			toq = self.RATED_TORQUE if cmd_rpm > 0 else -self.RATED_TORQUE
 			self.set_max_rpm(abs(cmd_rpm))
 			self.set_sync_torque(toq)
-			####
-			# while True:
-			# 	L2,R2 = self.get_rpm()
-			# 	#print(f'Left RPM = {L2}, Right RPM = {R2}')
-			# 	if cmd_rpm > 0:
-			# 		if L2 >=cmd_rpm:
-			# 			break
-			# 	elif cmd_rpm < 0:
-			# 		if L2 <=cmd_rpm:
-			# 			break
-			####
-			# end = time.time()
-			# print(f'Torque mode go to {self.CMD_RPM} RPM time = {end-start}')
-
-
-
-
-
 
 	def set_max_L_current(self, MAX_CUR):
 		max_cur = self.int16Dec_to_int16Hex(MAX_CUR*10)
@@ -342,6 +310,11 @@ class MotorController:
 		result = self.client.write_register(self.R_RATED_CUR, cur)
 	
 	def get_voltage(self):
-		register = self.modbus_fail_read_handler(0x20A1, 1)
+		register = self.modbus_fail_read_handler(self.BUS_VOLTAGE, 1)
 		vol = np.float64(register[0]/100.0)
 		return vol
+	
+	def get_driver_temp(self):
+		register = self.modbus_fail_read_handler(self.DRIVER_TEMP, 1)
+		drv_temp = np.float64(register[0]/10.0)
+		return drv_temp
