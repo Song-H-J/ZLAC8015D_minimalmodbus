@@ -318,3 +318,7 @@ class MotorController:
 		register = self.modbus_fail_read_handler(self.DRIVER_TEMP, 1)
 		drv_temp = np.float64(register[0]/10.0)
 		return drv_temp
+	
+	def get_rs485_id(self):
+		register = self.modbus_fail_read_handler(0x2001, 1)
+		return register

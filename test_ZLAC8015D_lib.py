@@ -18,10 +18,11 @@ while True:
         #L,R = motors.get_rpm()
         #print(f'Left RPM = {L}, Right RPM = {R}')
 
-        L,R = motors.get_torque()
-        V = motors.get_voltage()
-        print(f'L Torque = {L}, R Torque = {R}, Vol = {V}')
-        
+        #L,R = motors.get_torque()
+        #V = motors.get_voltage()
+        #print(f'L Torque = {L}, R Torque = {R}, Vol = {V}')
+        ID = motors.get_rs485_id()
+        print(f'ID = {ID}')
 
         if keyboard.is_pressed('3'):
             motors.set_rpm_w_toq(200)
