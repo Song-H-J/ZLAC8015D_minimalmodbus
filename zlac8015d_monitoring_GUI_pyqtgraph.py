@@ -246,7 +246,7 @@ class Main(QWidget):
 
         ################################################################
         # 모터 생성자
-        self.motors = ZLAC8015D.MotorController(port='COM9')
+        self.motors = ZLAC8015D.MotorController(port='COM9', id = 2)
 
         self.motors.disable_motor()
         self.motors.enable_motor()

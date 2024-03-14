@@ -5,19 +5,18 @@ import time
 
 class MotorController:
 
-	def __init__(self, port):
+	def __init__(self, port, id):
 
 		self._port = port
-		self.ID = 2 # default ID : 1
+		self.ID = id # default ID : 1
 
 		# ZLAC8015D support RS485 with Modbus RTU protocol
 		self.client = minimodbus.Instrument(port, self.ID, 'rtu')
-		self.client2 = minimodbus.Instrument(port, 2, 'rtu')
 		self.client.serial.baudrate = 115200 # default Baudrate
 		self.client.serial.parity = serial.PARITY_NONE
 		self.client.serial.stopbits = 1
 		self.client.serial.bytesize = 8
-		self.client.serial.timeout = 1 # seconds
+		self.client.serial.timeout = 0.015 # seconds
 		
 		####################
 		# Register Address #

@@ -2,16 +2,16 @@ from zlac8015d import ZLAC8015D
 import keyboard
 import time
 
-motors = ZLAC8015D.MotorController(port = "COM9")
+motors = ZLAC8015D.MotorController(port = "COM9", id = 2)
 
 motors.disable_motor()
 motors.enable_motor()
 motors.set_mode(4)
 motors.set_max_rpm(100)
-motors.set_max_L_current(5)
-motors.set_max_R_current(5)
-motors.set_rated_L_current(3)
-motors.set_rated_R_current(3)
+motors.set_max_L_current(15)
+motors.set_max_R_current(15)
+motors.set_rated_L_current(6)
+motors.set_rated_R_current(6)
 
 while True:
     try:
@@ -21,8 +21,8 @@ while True:
         #L,R = motors.get_torque()
         #V = motors.get_voltage()
         #print(f'L Torque = {L}, R Torque = {R}, Vol = {V}')
-        ID = motors.get_rs485_id()
-        print(f'ID = {ID}')
+        # ID = motors.get_rs485_id()
+        # print(f'ID = {ID}')
 
         if keyboard.is_pressed('3'):
             motors.set_rpm_w_toq(200)
