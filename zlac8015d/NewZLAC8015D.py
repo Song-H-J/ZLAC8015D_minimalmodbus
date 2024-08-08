@@ -127,7 +127,10 @@ class MotorController:
         self.MAX_TORQUE = 11000 # mA
         self.RATED_TORQUE = 6000 # mA
 
-        self.CMD_RPM = 0 # RPM
+        self.CMD_L_RPM = 0 # RPM
+        self.CMD_L_RPM = 0
+        #################################################################################################
+        #################################################################################################
 
     def modbus_fail_read_handler(self, ADDR, WORD, ID):
         read_success = False
@@ -249,57 +252,77 @@ class MotorController:
         client = self.client.get(ID)
         toq = self.int16Dec_to_int16Hex(Toq)
         result = self.client.write_registers(self.L_CMD_TOQ, [toq,toq])
-################################################################################################
-    def update_to_0_rpm_loop(self, CMD, ID):
-        self.set_max_rpm(1,ID)
-        CUR_L, CUR_R = self.get_rpm(ID)
-        if CUR_R > 0:
-            self.set_sync_torque(-self.RATED_TORQUE,ID)
-            while CUR_R>CMD:
-                CUR_L, CUR_R = self.get_rpm(ID)
-            self.set_sync_torque(0,ID)
-        elif CUR_R < 0:
-            self.set_sync_torque(self.RATED_TORQUE,ID)
-            while CUR_R < CMD:
-                CUR_L, CUR_R = self.get_rpm(ID)
-        self.set_sync_torque(0,ID)
-    
-    def update_decel_same_dir(self, CUR_R, CMD, TOQ, ID):
-        while abs(CUR_R) >= (abs(CMD)+20): # 20 is margin
-            CUR_L, CUR_R = self.get_rpm(ID)
-        self.set_sync_torque(TOQ)
+################################################################################################    
+    def set_rpm_w_toq(self, cmd_L, cmd_R):
+        self.CMD_L_RPM = cmd_L
+        self.CMD_R_RPM = cmd_R    
         
+        Ltoq = self.RATED_TORQUE
+        Rtoq = self.RATED_TORQUE
 
-    def set_rpm_w_toq(self, cmd_rpm, ID):
-        temp_cmd_rpm = cmd_rpm 
-        if temp_cmd_rpm == self.CMD_RPM: return 0
-        else:
-            self.CMD_RPM = cmd_rpm
+        Lok = False
+        Rok = False
+
+        while not (Lok and Rok):
+            Lcur_L_rpm, Lcur_R_rpm = self.get_rpm(self.L_ID)
+            Rcur_L_rpm, Rcur_R_rpm = self.get_rpm(self.R_ID)
+           
+
+            if cmd_L == 0 and not Lok:
+                self.set_max_rpm(1,self.L_ID)
+                if abs(Lcur_L_rpm - cmd_L) <= 3:
+                    self.set_sync_torque(0, self.L_ID)
+                    Lok = True
+                elif Lcur_L_rpm > 0:
+                    self.set_sync_torque(-self.RATED_TORQUE, self.L_ID)
+                elif Lcur_L_rpm < 0:
+                    self.set_sync_torque(self.RATED_TORQUE, self.L_ID)
+                
+            if cmd_R == 0 and not Rok:
+                self.set_max_rpm(1,self.R_ID)
+                if abs(Rcur_L_rpm - cmd_R) <= 3:
+                    self.set_sync_torque(0, self.R_ID)
+                    Rok = True
+                elif Rcur_L_rpm > 0:
+                    self.set_sync_torque(-self.RATED_TORQUE, self.R_ID)
+                elif Rcur_L_rpm < 0:
+                    self.set_sync_torque(self.RATED_TORQUE, self.R_ID)
+
+            if (cmd_L * (Lcur_L_rpm + 0.001) > 0) and not Lok:
+                Ltoq = self.RATED_TORQUE if cmd_L > 0 else -self.RATED_TORQUE
+                self.set_max_rpm(abs(cmd_L), self.L_ID)
+                if abs(Lcur_L_rpm - cmd_L) <= 10:
+                    self.set_sync_torque(Ltoq, self.L_ID)
+                    Lok = True
+                elif abs(cmd_L) >= abs(Lcur_L_rpm):
+                    self.set_sync_torque(Ltoq, self.L_ID)
+                else:
+                    self.set_sync_torque(-Ltoq,self.L_ID)
             
-        toq = self.RATED_TORQUE
-        cur_L_rpm, cur_R_rpm = self.get_rpm(ID)
-		
-        if cmd_rpm == 0:
-            thread = threading.Thread(target=self.update_to_0_rpm_loop, args=(cmd_rpm, ID))
-            thread.start()
-            thread.join()
+            if (cmd_R * (Rcur_L_rpm + 0.001) > 0) and not Rok:
+                Rtoq = self.RATED_TORQUE if cmd_R > 0 else -self.RATED_TORQUE
+                self.set_max_rpm(abs(cmd_R), self.R_ID)
+                if abs(Rcur_L_rpm - cmd_R) <= 10:
+                    self.set_sync_torque(Rtoq, self.L_ID)
+                    Rok = True
+                elif abs(cmd_R) >= abs(Rcur_L_rpm):
+                    self.set_sync_torque(Rtoq, self.R_ID)
+                else:
+                    self.set_sync_torque(-Rtoq,self.R_ID)
+                
+            if (cmd_L * (Lcur_L_rpm + 0.001) < 0) and not Lok:
+                Ltoq = self.RATED_TORQUE if cmd_L > 0 else -self.RATED_TORQUE
+                self.set_max_rpm(abs(cmd_L), self.L_ID)
+                self.set_sync_torque(Ltoq, self.L_ID)
+                if abs(Lcur_L_rpm - cmd_L) <= 3:
+                    Lok = True
 
-        elif cmd_rpm * (cur_L_rpm + 0.01) > 0:
-            toq = self.RATED_TORQUE if cmd_rpm > 0 else -self.RATED_TORQUE
-            if abs(cmd_rpm) >= abs(cur_L_rpm):
-                self.set_max_rpm(abs(cmd_rpm))
-                self.set_sync_torque(toq)
-            else:
-                self.set_max_rpm(abs(cmd_rpm))
-                self.set_sync_torque(-toq)
-                thread2 = threading.Thread(target=self.update_decel_same_dir, args=(cur_R_rpm, cmd_rpm, toq, ID))
-                thread2.start()
-                thread2.join()
-
-        elif cmd_rpm * (cur_R_rpm + 0.01) < 0:
-            toq = self.RATED_TORQUE if cmd_rpm > 0 else -self.RATED_TORQUE
-            self.set_max_rpm(abs(cmd_rpm))
-            self.set_sync_torque(toq)
+            if (cmd_R * (Rcur_L_rpm + 0.001) <0) and not Rok:
+                Rtoq = self.RATED_TORQUE if cmd_R > 0 else -self.RATED_TORQUE
+                self.set_max_rpm(abs(cmd_R), self.R_ID)
+                self.set_sync_torque(Rtoq, self.R_ID)
+                if abs(Rcur_L_rpm - cmd_R) <= 3:
+                    Rok = True
 ################################################################################################
     def set_max_L_current(self, MAX_CUR, ID):
         client = self.client.get(ID)

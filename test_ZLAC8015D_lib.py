@@ -2,7 +2,7 @@ from zlac8015d import ZLAC8015D
 import keyboard
 import time
 
-motors = ZLAC8015D.MotorController(port = "COM9", id = 2)
+motors = ZLAC8015D.MotorController(port = "COM19", id = 2)
 
 motors.disable_motor()
 motors.enable_motor()

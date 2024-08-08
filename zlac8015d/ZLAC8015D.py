@@ -16,7 +16,7 @@ class MotorController:
 		self.client.serial.parity = serial.PARITY_NONE
 		self.client.serial.stopbits = 1
 		self.client.serial.bytesize = 8
-		self.client.serial.timeout = 0.015 # seconds
+		self.client.serial.timeout = 1 # seconds
 		
 		####################
 		# Register Address #
