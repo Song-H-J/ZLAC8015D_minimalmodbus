@@ -2,7 +2,6 @@ import minimalmodbus as minimodbus
 import serial
 import numpy as np
 import time
-import threading
 
 class MotorController:
     def __init__(self, port):
@@ -128,7 +127,9 @@ class MotorController:
         self.RATED_TORQUE = 6000 # mA
 
         self.CMD_L_RPM = 0 # RPM
-        self.CMD_L_RPM = 0
+        self.CMD_R_RPM = 0
+
+        self.isFinished = True
         #################################################################################################
         #################################################################################################
 
@@ -163,7 +164,7 @@ class MotorController:
         else:
             print("set_mode ERROR: set only 3 or 4")
             return 0
-        result = self.client.write_register(self.OPR_MODE, MODE)
+        result = client.write_register(self.OPR_MODE, MODE)
         return result
 
     def get_mode(self, ID):
@@ -173,15 +174,15 @@ class MotorController:
     
     def enable_motor(self, ID):
         client = self.client.get(ID)
-        result = self.client.write_register(self.CONTROL_REG, self.ENABLE)
+        result = client.write_register(self.CONTROL_REG, self.ENABLE)
     
     def disable_motor(self, ID):
         client = self.client.get(ID)
-        result = self.client.write_register(self.CONTROL_REG, self.DOWN_TIME)
+        result = client.write_register(self.CONTROL_REG, self.DOWN_TIME)
     
     def emergency_stop_motor(self, ID):
         client = self.client.get(ID)
-        result = self.client.write_register(self.CONTROL_REG, self.EMER_STOP)
+        result = client.write_register(self.CONTROL_REG, self.EMER_STOP)
 
     def get_fault_code(self, ID):
         fault_codes = self.modbus_fail_read_handler(self.L_FAULT, 2, ID)
@@ -193,15 +194,15 @@ class MotorController:
 
     def clear_alarm(self, ID):
         client = self.client.get(ID)        
-        result = self.client.write_register(self.CONTROL_REG, self.ALRM_CLR)
+        result = client.write_register(self.CONTROL_REG, self.ALRM_CLR)
 
     def set_accel_time(self, L_ms, R_ms, ID):
         client = self.client.get(ID)
-        result = self.client.write_registers(self.L_ACL_TIME, [int(L_ms),int(R_ms)])
+        result = client.write_registers(self.L_ACL_TIME, [int(L_ms),int(R_ms)])
 
     def set_decel_time(self, L_ms, R_ms, ID):
         client = self.client.get(ID)
-        result = self.client.write_registers(self.L_DCL_TIME, [int(L_ms), int(R_ms)])
+        result = client.write_registers(self.L_DCL_TIME, [int(L_ms), int(R_ms)])
 
     def int16Dec_to_int16Hex(self,int16):
         lo_byte = (int16 & 0x00FF)
@@ -213,7 +214,7 @@ class MotorController:
         client = self.client.get(ID)
         left_bytes = self.int16Dec_to_int16Hex(L_rpm)
         right_bytes = self.int16Dec_to_int16Hex(R_rpm)
-        result = self.client.write_registers(self.L_CMD_RPM, [left_bytes, right_bytes])
+        result = client.write_registers(self.L_CMD_RPM, [left_bytes, right_bytes])
 
     def get_rpm(self, ID):
         registers = self.modbus_fail_read_handler(self.L_FB_RPM, 2, ID)
@@ -234,7 +235,7 @@ class MotorController:
         client = self.client.get(ID)
         left_bytes = self.int16Dec_to_int16Hex(L_toq)
         right_bytes = self.int16Dec_to_int16Hex(R_toq)
-        result = self.client.write_registers(self.L_CMD_TOQ, [left_bytes, right_bytes])
+        result = client.write_registers(self.L_CMD_TOQ, [left_bytes, right_bytes])
 
     def get_torque(self, ID):
         registers = self.modbus_fail_read_handler(self.L_FB_TOQ, 2, ID)
@@ -245,23 +246,36 @@ class MotorController:
     def set_max_rpm(self, MAX_RPM, ID):
         client = self.client.get(ID)
         max_rpm = self.int16Dec_to_int16Hex(MAX_RPM)
-        result = self.client.write_register(self.MAX_MOTOR_RPM, max_rpm)
+        result = client.write_register(self.MAX_MOTOR_RPM, max_rpm)
         return result
 	    
     def set_sync_torque(self, Toq, ID):
         client = self.client.get(ID)
         toq = self.int16Dec_to_int16Hex(Toq)
-        result = self.client.write_registers(self.L_CMD_TOQ, [toq,toq])
+        result = client.write_registers(self.L_CMD_TOQ, [toq,toq])
 ################################################################################################    
     def set_rpm_w_toq(self, cmd_L, cmd_R):
+        Lok = False
+        Rok = False
+        self.isFinished = False
+
+        # if self.CMD_L_RPM == cmd_L:
+        #     Lok = True
+        # else:
+        #     self.CMD_L_RPM = cmd_L
+
+        # if self.CMD_R_RPM == cmd_R:
+        #     Rok = True
+        # else:
+        #     self.CMD_R_RPM = cmd_R
+
         self.CMD_L_RPM = cmd_L
         self.CMD_R_RPM = cmd_R    
         
         Ltoq = self.RATED_TORQUE
         Rtoq = self.RATED_TORQUE
 
-        Lok = False
-        Rok = False
+
 
         while not (Lok and Rok):
             Lcur_L_rpm, Lcur_R_rpm = self.get_rpm(self.L_ID)
@@ -323,28 +337,30 @@ class MotorController:
                 self.set_sync_torque(Rtoq, self.R_ID)
                 if abs(Rcur_L_rpm - cmd_R) <= 3:
                     Rok = True
+        
+################################################################################################
 ################################################################################################
     def set_max_L_current(self, MAX_CUR, ID):
         client = self.client.get(ID)
         max_cur = self.int16Dec_to_int16Hex(MAX_CUR*10)
-        result = self.client.write_register(self.L_MAX_CUR, max_cur)
+        result = client.write_register(self.L_MAX_CUR, max_cur)
         return result
     
     def set_max_R_current(self, MAX_CUR, ID):
         client = self.client.get(ID)
         max_cur = self.int16Dec_to_int16Hex(MAX_CUR*10)
-        result = self.client.write_register(self.R_MAX_CUR, max_cur)
+        result = client.write_register(self.R_MAX_CUR, max_cur)
         return result
 	
     def set_rated_L_current(self, rated_cur,ID):
         client = self.client.get(ID)
         cur = self.int16Dec_to_int16Hex(rated_cur*10)
-        result = self.client.write_register(self.L_RATED_CUR, cur)
+        result = client.write_register(self.L_RATED_CUR, cur)
 
     def set_rated_R_current(self, rated_cur,ID):
         client = self.client.get(ID)
         cur = self.int16Dec_to_int16Hex(rated_cur*10)
-        result = self.client.write_register(self.R_RATED_CUR, cur)
+        result = client.write_register(self.R_RATED_CUR, cur)
 	
     def get_voltage(self,ID):
         register = self.modbus_fail_read_handler(self.BUS_VOLTAGE, 1,ID)
