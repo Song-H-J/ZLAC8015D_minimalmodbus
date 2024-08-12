@@ -302,17 +302,6 @@ class MotorController:
                 elif Rcur_L_rpm < 0:
                     self.set_sync_torque(self.RATED_TORQUE, self.R_ID)
 
-            if (cmd_L * (Lcur_L_rpm + 0.001) > 0) and not Lok:
-                Ltoq = self.RATED_TORQUE if cmd_L > 0 else -self.RATED_TORQUE
-                self.set_max_rpm(abs(cmd_L), self.L_ID)
-                if abs(Lcur_L_rpm - cmd_L) <= 10:
-                    self.set_sync_torque(Ltoq, self.L_ID)
-                    Lok = True
-                elif abs(cmd_L) >= abs(Lcur_L_rpm):
-                    self.set_sync_torque(Ltoq, self.L_ID)
-                else:
-                    self.set_sync_torque(-Ltoq,self.L_ID)
-            
             if (cmd_R * (Rcur_L_rpm + 0.001) > 0) and not Rok:
                 Rtoq = self.RATED_TORQUE if cmd_R > 0 else -self.RATED_TORQUE
                 self.set_max_rpm(abs(cmd_R), self.R_ID)
@@ -323,6 +312,17 @@ class MotorController:
                     self.set_sync_torque(Rtoq, self.R_ID)
                 else:
                     self.set_sync_torque(-Rtoq,self.R_ID)
+
+            if (cmd_L * (Lcur_L_rpm + 0.001) > 0) and not Lok:
+                Ltoq = self.RATED_TORQUE if cmd_L > 0 else -self.RATED_TORQUE
+                self.set_max_rpm(abs(cmd_L), self.L_ID)
+                if abs(Lcur_L_rpm - cmd_L) <= 10:
+                    self.set_sync_torque(Ltoq, self.L_ID)
+                    Lok = True
+                elif abs(cmd_L) >= abs(Lcur_L_rpm):
+                    self.set_sync_torque(Ltoq, self.L_ID)
+                else:
+                    self.set_sync_torque(-Ltoq,self.L_ID)
                 
             if (cmd_L * (Lcur_L_rpm + 0.001) < 0) and not Lok:
                 Ltoq = self.RATED_TORQUE if cmd_L > 0 else -self.RATED_TORQUE
